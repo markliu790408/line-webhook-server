@@ -4,10 +4,18 @@ const axios = require('axios');
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.text());
 
 app.post('/webhook', async (req, res) => {
-    const message = req.body.message || "🚀爆拉靈敏版起爆點！";
+    let parsed;
+try {
+    parsed = JSON.parse(req.body);
+} catch (e) {
+    console.error('❌ 解析 webhook body 失敗:', e.message);
+    return res.status(400).send('Invalid webhook format');
+}
+
+const message = parsed.message || "🚀爆拉靈敏版起爆點！";
 
     try {
         await axios.post('https://api.line.me/v2/bot/message/push', {
