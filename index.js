@@ -4,10 +4,12 @@ const axios = require('axios');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// 這裡要改成接收原始字串，因為 TradingView 發 JSON 字串
+// 用 text 模式接收 TradingView 傳來的 webhook
 app.use(express.text());
 
 app.post('/webhook', async (req, res) => {
+    console.log('✅ 收到 TradingView webhook！');
+
     let parsed;
     try {
         parsed = JSON.parse(req.body);
@@ -22,9 +24,7 @@ app.post('/webhook', async (req, res) => {
     try {
         await axios.post('https://api.line.me/v2/bot/message/push', {
             to: process.env.LINE_USER_ID,
-            messages: [
-                { type: "text", text: message }
-            ]
+            messages: [{ type: "text", text: message }]
         }, {
             headers: {
                 'Content-Type': 'application/json',
@@ -51,6 +51,7 @@ app.post('/webhook', async (req, res) => {
     res.status(200).send('OK');
 });
 
+// 測試用首頁
 app.get('/', (req, res) => {
     res.send('🚀 Webhook server is running!');
 });
