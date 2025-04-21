@@ -5,7 +5,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // 這裡改成接收「原始字串」
-app.use(express.text());
+app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
     const body = req.body;
