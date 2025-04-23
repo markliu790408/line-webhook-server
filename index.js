@@ -46,58 +46,72 @@ app.post('/webhook', async (req, res) => {
         });
 
         const symbols = blaveResponse.data.data || [];
-        const filtered = symbols.filter(item => {
+        const whaleSymbols = symbols.filter(item => {
             const symbol = item.symbol;
-            // 確保該幣種在觀察清單中
+            // 確保該幣種在觀察清單中，並且符合巨鯨警報條件（如 1h OI 和 4h OI 條件）
             return watchlist.includes(symbol) &&
                 (item.whaleHunter?.oi_1h > 1.5 || item.whaleHunter?.oi_4h > 1.2) &&
                 item.whaleHunter?.longshort_1h < 0;
         });
 
-        if (filtered.length > 0) {
-            const messages = filtered.map(item => `🟢 ${item.symbol}｜1h OI: ${item.whaleHunter?.oi_1h}｜4h OI: ${item.whaleHunter?.oi_4h}｜1h LongShort: ${item.whaleHunter?.longshort_1h}`).join('\n');
-            console.log(messages);
+        if (whaleSymbols.length > 0) {
+            // 準備發送的訊息
+            const whaleMessages = whaleSymbols.map(item => `🟢 ${item.symbol}｜1h OI: ${item.whaleHunter?.oi_1h}｜4h OI: ${item.whaleHunter?.oi_4h}｜1h LongShort: ${item.whaleHunter?.longshort_1h}`).join('\n');
+            console.log('✅ 巨鯨警報幣種:', whaleMessages);
 
-            // 推送到 Telegram
+            // 發送巨鯨警報的訊息到 Telegram 和 LINE
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
                 chat_id: TELEGRAM_CHAT_ID,
-                text: `🚀 Blave 監控通知 🚀\n符合條件的幣種有：\n${messages}`
+                text: `🚀 Blave 巨鯨警報 🚀\n符合條件的幣種有：\n${whaleMessages}`
             });
-            console.log('✅ 已推送通知至 Telegram！');
+            console.log('✅ 已推送巨鯨警報通知至 Telegram！');
+
+            await axios.post('https://api.line.me/v2/bot/message/push', {
+                to: process.env.LINE_USER_ID,
+                messages: [
+                    { type: "text", text: `🚀 Blave 巨鯨警報 🚀\n符合條件的幣種有：\n${whaleMessages}` }
+                ]
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
+                }
+            });
+            console.log('✅ 已推送巨鯨警報通知至 LINE！');
         }
 
     } catch (error) {
         console.error(`[${new Date().toLocaleString()}] ❌ 抓取 Blave 資料失敗，錯誤：`, error.message);
     }
 
-    // === 推送 TradingView 訊息 ===
+    // === 進一步過濾 TradingView 的爆拉訊號 ===
     try {
-        await axios.post('https://api.line.me/v2/bot/message/push', {
-            to: process.env.LINE_USER_ID,
-            messages: [
-                { type: "text", text: textMessage }
-            ]
-        }, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
-            }
-        });
-        console.log('✅ LINE 訊息已推送:', textMessage);
-    } catch (error) {
-        console.error('❌ LINE 推送失敗:', error.response?.data || error.message);
-    }
+        // 推送爆拉訊號的幣種至 LINE 和 Telegram
+        if (body.symbol && body.message) {
+            await axios.post('https://api.line.me/v2/bot/message/push', {
+                to: process.env.LINE_USER_ID,
+                messages: [
+                    { type: "text", text: body.message }
+                ]
+            }, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
+                }
+            });
+            console.log('✅ 爆拉訊號已推送至 LINE:', body.message);
 
-    // 推送到 Telegram
-    try {
-        const telegramURL = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
-        await axios.post(telegramURL, {
-            chat_id: process.env.TELEGRAM_CHAT_ID,
-            text: textMessage
-        });
-        console.log('✅ Telegram 訊息已推送:', textMessage);
+            // 推送到 Telegram
+            const telegramURL = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+            await axios.post(telegramURL, {
+                chat_id: process.env.TELEGRAM_CHAT_ID,
+                text: body.message
+            });
+            console.log('✅ 爆拉訊號已推送至 Telegram:', body.message);
+        }
+
     } catch (error) {
-        console.error('❌ Telegram 推送失敗:', error.response?.data || error.message);
+        console.error('❌ 推送爆拉訊號失敗:', error.response?.data || error.message);
     }
 
     res.status(200).send('OK');
