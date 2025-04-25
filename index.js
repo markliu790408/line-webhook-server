@@ -142,8 +142,10 @@ async function checkBlaveAlert() {
     }
 }
 
-// 每 15 分鐘定時執行
-cron.schedule('*/15 * * * *', async () => {
-    console.log(`[${new Date().toLocaleString()}] ⏰ 定時檢查 Blave 巨鯨信號`);
-    await checkBlaveAlert();
+// 每 1 小時定時執行
+cron.schedule('0 * * * *', async () => {
+  console.log(`[${new Date().toLocaleString()}] ⏰ 整點觸發，準備等待15秒再抓 Blave 資料`);
+  await new Promise(resolve => setTimeout(resolve, 15000)); // 等15秒
+  await checkBlaveAlert();
 });
+
