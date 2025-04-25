@@ -14,7 +14,7 @@ const BLAVE_SECRET_KEY = process.env.BLAVE_SECRET_KEY;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// === 觀察清單幣種 ===
+// === 觀察清單幣種（保留，但目前沒用到篩選）===
 const watchlist = [
     'ENJUSDT.P', 'TAOUSDT.P', 'XAIOUSDT.P', 'HIFIUSDT.P', 'LOKAUSDT.P',
     'MBOXUSDT.P', 'PIXELUSDT.P', 'LUMIAUSDT.P', 'BTCUSDT.P', 'ETHUSDT.P',
@@ -28,7 +28,6 @@ app.post('/webhook', async (req, res) => {
     const body = req.body;
     console.log('✅ 收到 TradingView webhook!', body);
 
-    // 確認 body 正常
     if (!body || typeof body !== 'object') {
         console.error('❌ Webhook 資料異常:', body);
         return res.status(400).send('Invalid webhook data');
@@ -36,48 +35,7 @@ app.post('/webhook', async (req, res) => {
 
     const textMessage = body.message || JSON.stringify(body);
 
-    // === 取得 Blave 數據並篩選符合條件的幣種（原 webhook 觸發用）===
-// === 取得 Blave 數據並篩選符合條件的幣種 ===
-try {
-    console.log(`[${new Date().toLocaleString()}] 🧭 正在抓取 Blave 巨鯨幣種...`);
-    const blaveResponse = await axios.get('https://api.blave.org/whale_hunter/get_symbols', {
-        headers: {
-            'api-key': BLAVE_API_KEY,
-            'secret-key': BLAVE_SECRET_KEY
-        }
-    });
-
-    const symbols = blaveResponse.data.data || [];
-
-    // ✅ 過濾符合條件的幣種（巨鯨行為）
-    const filtered = symbols.filter(item =>
-        (item.whaleHunter?.oi_1h > 1.5 || item.whaleHunter?.oi_4h > 1.2) &&
-        item.whaleHunter?.longshort_1h < 0
-    );
-
-    if (filtered.length > 0) {
-        const messages = filtered.map(item =>
-            `🟢 ${item.symbol}｜1h OI: ${item.whaleHunter?.oi_1h}｜4h OI: ${item.whaleHunter?.oi_4h}｜1h LongShort: ${item.whaleHunter?.longshort_1h}`
-        ).join('\n');
-
-        console.log(messages);
-
-        // ✅ 推送到 Telegram
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-            chat_id: TELEGRAM_CHAT_ID,
-            text: `🚀 Blave 監控通知 🚀\n巨鯨活動幣種：\n${messages}`
-        });
-
-        console.log('✅ Blave 幣種已推送至 Telegram！');
-    } else {
-        console.log('⚪ Blave 沒有符合條件的幣種');
-    }
-
-} catch (error) {
-    console.error(`[${new Date().toLocaleString()}] ❌ 抓取 Blave 資料失敗：`, error.message);
-}
-
-    // === 推送 TradingView 訊息 ===
+    // === LINE 推送 ===
     try {
         await axios.post('https://api.line.me/v2/bot/message/push', {
             to: process.env.LINE_USER_ID,
@@ -95,7 +53,7 @@ try {
         console.error('❌ LINE 推送失敗:', error.response?.data || error.message);
     }
 
-    // 推送到 Telegram
+    // === Telegram 推送 ===
     try {
         const telegramURL = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
         await axios.post(telegramURL, {
@@ -110,7 +68,7 @@ try {
     res.status(200).send('OK');
 });
 
-// === Render 測試頁面 ===
+// === Render 測試首頁 ===
 app.get('/', (req, res) => {
     res.send('🚀 Webhook server is running');
 });
@@ -119,10 +77,13 @@ app.listen(port, () => {
     console.log(`✅ Server is listening on port ${port}`);
 });
 
-// === ✅ 新增：定時檢查 Blave 幣種並推送至 Telegram ===
+// === Blave 巨鯨定時檢查 ===
+cron.schedule('0 * * * *', async () => {
+    console.log(`[${new Date().toLocaleString()}] ⏰ 整點觸發，準備等待15秒再抓 Blave 資料`);
+    await new Promise(resolve => setTimeout(resolve, 15000)); // 延遲15秒
 
-async function checkBlaveAlert() {
     try {
+        console.log(`[${new Date().toLocaleString()}] 🧭 正在抓取 Blave 巨鯨幣種...`);
         const blaveResponse = await axios.get('https://api.blave.org/whale_hunter/get_symbols', {
             headers: {
                 'api-key': BLAVE_API_KEY,
@@ -132,28 +93,35 @@ async function checkBlaveAlert() {
 
         const symbols = blaveResponse.data.data || [];
 
-        if (symbols.length > 0) {
-            const messages = symbols.map(symbol => `🟢 ${symbol}`).join('\n');
-            console.log("🧭 Blave 回傳幣種：\n" + messages);
+        // ✅ 過濾符合巨鯨條件的幣
+        const filtered = symbols.filter(item =>
+            (item.whaleHunter?.oi_1h > 1.5 || item.whaleHunter?.oi_4h > 1.2) &&
+            item.whaleHunter?.longshort_1h < 0
+        );
+
+        if (filtered.length > 0) {
+            let messages = filtered.map(item =>
+                `🟢 ${item.symbol}｜1h OI: ${item.whaleHunter?.oi_1h}｜4h OI: ${item.whaleHunter?.oi_4h}｜1h LongShort: ${item.whaleHunter?.longshort_1h}`
+            ).join('\n');
+
+            // ✅ 防止超過4096字
+            if (messages.length > 4090) {
+                messages = messages.slice(0, 4090) + '\n...（已截斷部分）';
+            }
+
+            console.log(`📢 將推送 Blave 符合條件幣種：\n${messages}`);
 
             await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
                 chat_id: TELEGRAM_CHAT_ID,
                 text: `🚀 Blave 監控通知 🚀\n巨鯨活動幣種：\n${messages}`
             });
 
-            console.log("✅ Blave 幣種已推送至 Telegram！");
+            console.log('✅ Blave 幣種已推送至 Telegram！');
         } else {
-            console.log("⚪ Blave 沒有符合條件的幣種");
+            console.log('⚪ Blave 沒有符合條件的幣種');
         }
+
     } catch (error) {
-        console.error('❌ Blave 抓取或推送失敗:', error.response?.data || error.message);
+        console.error(`[${new Date().toLocaleString()}] ❌ Blave 抓取或推送失敗:`, error.response?.data || error.message);
     }
-}
-
-// 每 1 小時定時執行
-cron.schedule('0 * * * *', async () => {
-  console.log(`[${new Date().toLocaleString()}] ⏰ 整點觸發，準備等待15秒再抓 Blave 資料`);
-  await new Promise(resolve => setTimeout(resolve, 15000)); // 等15秒
-  await checkBlaveAlert();
 });
-
