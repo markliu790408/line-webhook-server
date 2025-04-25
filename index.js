@@ -36,7 +36,7 @@ app.post('/webhook', async (req, res) => {
 
     const textMessage = body.message || JSON.stringify(body);
 
-    // === 取得 Blave 數據並篩選符合條件的幣種 ===
+    // === 取得 Blave 數據並篩選符合條件的幣種（原 webhook 觸發用）===
     try {
         const blaveResponse = await axios.get('https://api.blave.org/whale_hunter/get_symbols', {
             headers: {
@@ -48,7 +48,6 @@ app.post('/webhook', async (req, res) => {
         const symbols = blaveResponse.data.data || [];
         const filtered = symbols.filter(item => {
             const symbol = item.symbol;
-            // 確保該幣種在觀察清單中
             return watchlist.includes(symbol) &&
                 (item.whaleHunter?.oi_1h > 1.5 || item.whaleHunter?.oi_4h > 1.2) &&
                 item.whaleHunter?.longshort_1h < 0;
@@ -103,10 +102,48 @@ app.post('/webhook', async (req, res) => {
     res.status(200).send('OK');
 });
 
+// === Render 測試頁面 ===
 app.get('/', (req, res) => {
     res.send('🚀 Webhook server is running');
 });
 
 app.listen(port, () => {
     console.log(`✅ Server is listening on port ${port}`);
+});
+
+// === ✅ 新增：定時檢查 Blave 幣種並推送至 Telegram ===
+
+async function checkBlaveAlert() {
+    try {
+        const blaveResponse = await axios.get('https://api.blave.org/whale_hunter/get_symbols', {
+            headers: {
+                'api-key': BLAVE_API_KEY,
+                'secret-key': BLAVE_SECRET_KEY
+            }
+        });
+
+        const symbols = blaveResponse.data.data || [];
+
+        if (symbols.length > 0) {
+            const messages = symbols.map(symbol => `🟢 ${symbol}`).join('\n');
+            console.log("🧭 Blave 回傳幣種：\n" + messages);
+
+            await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+                chat_id: TELEGRAM_CHAT_ID,
+                text: `🚀 Blave 監控通知 🚀\n巨鯨活動幣種：\n${messages}`
+            });
+
+            console.log("✅ Blave 幣種已推送至 Telegram！");
+        } else {
+            console.log("⚪ Blave 沒有符合條件的幣種");
+        }
+    } catch (error) {
+        console.error('❌ Blave 抓取或推送失敗:', error.response?.data || error.message);
+    }
+}
+
+// 每 15 分鐘定時執行
+cron.schedule('*/15 * * * *', async () => {
+    console.log(`[${new Date().toLocaleString()}] ⏰ 定時檢查 Blave 巨鯨信號`);
+    await checkBlaveAlert();
 });
