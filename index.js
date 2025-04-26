@@ -1,4 +1,8 @@
 require('dotenv').config();
+console.log('> Loaded TELEGRAM_BOT_TOKEN:', process.env.TELEGRAM_BOT_TOKEN);
+console.log('> Loaded TELEGRAM_CHAT_ID :', process.env.TELEGRAM_CHAT_ID);
+
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const app = express();
